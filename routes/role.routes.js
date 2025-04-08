@@ -16,3 +16,5 @@ router.get("/:id", authenticateUser, authorizePermission("view_roles_id"), getRo
 router.post("/", authenticateUser, authorizePermission("create_roles"), postRole);
 router.put("/:id", authenticateUser, authorizePermission("update_roles"), updateRole);
 router.delete("/:id", authenticateUser, authorizePermission("delete_roles"), deleteRole);
+
+export default router;
