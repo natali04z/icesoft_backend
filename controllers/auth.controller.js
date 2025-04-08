@@ -87,7 +87,7 @@ export const loginUser = async (req, res) => {
         }
 
         const token = jwt.sign(
-            {id: user._id, role: user.role.name  }, // ← ¡Esto es incorrecto!
+            {id: user._id, role: user.role.name  },
             process.env.JWT_SECRET,
             { expiresIn: "1d" }
           );

@@ -22,6 +22,7 @@ const RoleSchema = new mongoose.Schema({
   permissions: [permissionSchema]
 }, { timestamps: true });
 
+// Método estático para obtener roles predeterminados
 RoleSchema.statics.getDefaultRoles = function() {
   return ["admin", "assistant", "employee"];
 };
