@@ -31,12 +31,35 @@ const authenticateUser = (req, res, next) => {
   }
 };
 
-const authorizePermission = (action) => (req, res, next) => {
-  const hasPermission = req.user && checkPermission(req.user.role, action);
-  if (!req.user || !hasPermission) {
-    return res.status(403).json({ message: "Permission denied" });
-  }
-  next();
+export const authorizePermission = (permission) => {
+  return async (req, res, next) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+      
+      // Obtener el rol completo
+      const role = await Role.findById(req.user.roleId);
+      
+      if (!role) {
+        return res.status(403).json({ message: "Role not found" });
+      }
+      
+      // Verificar si el usuario tiene el permiso necesario
+      const hasPermission = role.isDefault 
+        ? checkPermission(role.name, permission) 
+        : role.permissions.some(p => p.name === permission);
+      
+      if (!hasPermission) {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+      
+      next();
+    } catch (error) {
+      console.error("Authorization error:", error);
+      return res.status(403).json({ message: "Authorization failed" });
+    }
+  };
 };
 
 export { authenticateUser, authorizePermission };
