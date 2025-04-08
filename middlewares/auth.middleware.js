@@ -1,5 +1,6 @@
 // middlewares/authMiddleware.js
 import jwt from "jsonwebtoken";
+import Role from "../models/role.js";
 import { checkPermission } from "../utils/permissions.js";
 
 const authenticateUser = (req, res, next) => {
@@ -31,7 +32,7 @@ const authenticateUser = (req, res, next) => {
   }
 };
 
-export const authorizePermission = (permission) => {
+const authorizePermission = (permission) => {
   return async (req, res, next) => {
     try {
       if (!req.user) {
