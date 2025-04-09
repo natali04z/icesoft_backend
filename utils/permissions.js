@@ -29,7 +29,7 @@ const DEFAULT_PERMISSIONS = {
   ],
   assistant: [
     "view_roles", "create_users", "view_users", "view_users_id", "update_users",
-    "view_categories", "create_categories", "update_categories", "view_customers",
+    "view_categories", "create_categories", "view_customers",
     "view_products", "create_products", "update_products", "delete_products",
     "view_providers", "view_providers_id", "create_providers", "update_providers",
     "view_purchases", "view_purchases_id", "create_purchases", "update_purchases",
@@ -37,7 +37,8 @@ const DEFAULT_PERMISSIONS = {
     "view_sales", "view_sales_id", "create_sales", "update_sales"
   ],
   employee: [
-    "view_categories", "view_products", "view_customers", "view_sales", "view_customers_id", "create_sales", "update_sales"
+    "view_categories", "view_products", "create_products", "update_products", "delete_products",
+     "view_customers", "view_sales", "view_customers_id", "create_sales", "update_sales"
   ]
 };
 
@@ -53,14 +54,12 @@ export const checkPermission = async (roleId, action) => {
     const role = await Role.findById(roleId);
     
     if (!role) {
-      console.log(`Rol no encontrado con ID: ${roleId}`);
       return false;
     }
     
     // Verificar en permisos predefinidos primero
     if (role.isDefault && DEFAULT_PERMISSIONS[role.name]) {
       const hasPermission = DEFAULT_PERMISSIONS[role.name].includes(action);
-      console.log(`Verificando permisos predefinidos para ${role.name}: ${hasPermission} (${action})`);
       return hasPermission;
     }
     
@@ -68,17 +67,14 @@ export const checkPermission = async (roleId, action) => {
     const hasPermission = role.permissions.some(permission => 
       typeof permission === 'string' ? permission === action : permission.name === action
     );
-    console.log(`Verificando permisos almacenados para ${role.name}: ${hasPermission} (${action})`);
     return hasPermission;
   } catch (error) {
-    console.error("Error checking permission:", error);
     return false;
   }
 };
 
 // Versión sincrónica para usar cuando ya tenemos el objeto de rol
 export const checkPermissionSync = (role, action) => {
-  console.log("checkPermissionSync:", { role: typeof role === 'object' ? role.name : role, action });
   
   // Si recibimos un objeto de rol completo
   if (typeof role === 'object' && role !== null) {

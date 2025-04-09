@@ -87,7 +87,7 @@ export const loginUser = async (req, res) => {
         }
 
         const token = jwt.sign(
-            {id: user._id, role: user.role.name  },
+            {id: user._id, role: user.role._id  }, // ← ¡Esto es incorrecto!
             process.env.JWT_SECRET,
             { expiresIn: "1d" }
           );
@@ -98,7 +98,6 @@ export const loginUser = async (req, res) => {
         res.status(500).json({ message: "Server error", error: error.message });
     }
 };
-
 
 // GET AUTHENTICATED USER
 export const getAuthenticatedUser = async (req, res) => {
