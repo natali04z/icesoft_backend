@@ -41,15 +41,43 @@ export const putUser = async (req, res) => {
         if (!mongoose.Types.ObjectId.isValid(id)) {
             return res.status(400).json({ message: "Invalid user ID" });
         }
+        
+        // Verificar si req.user existe
+        if (!req.user) {
+            return res.status(401).json({ message: "Authentication required" });
+        }
+        
+        // Verificar formato del ID del usuario actual
+        let currentUserId;
+        if (req.user._id) {
+            currentUserId = req.user._id.toString ? req.user._id.toString() : String(req.user._id);
+        } else if (req.user.id) {
+            currentUserId = req.user.id.toString ? req.user.id.toString() : String(req.user.id);
+        } else {
+            return res.status(401).json({ message: "User ID not found in authentication token" });
+        }
+        
+        // Verificar rol de usuario
+        let isAdmin = false;
+        if (typeof req.user.role === 'string') {
+            isAdmin = req.user.role === 'admin';
+        } else if (req.user.role && typeof req.user.role === 'object') {
+            isAdmin = req.user.role.name === 'admin';
+        } else if (req.user.role && req.user.role._id) {
+            // Si role es un ObjectId, necesitamos comparar con el documento Role
+            const roleDoc = await Role.findById(req.user.role);
+            isAdmin = roleDoc && roleDoc.name === 'admin';
+        }
 
-        // Solo admin puede editar otros usuarios
-        if (req.user.id !== id && req.user.role !== "admin") {
+        // Verificación de autorización
+        if (currentUserId !== id && !isAdmin) {
             return res.status(403).json({ message: "Unauthorized to edit this user" });
         }
 
         let updateData = { name, lastname, contact_number, email };
 
-        if (req.user.role === "admin" && role) {
+        // Verificar si el usuario es admin y quiere cambiar el rol
+        if (isAdmin && role) {
             const roleDoc = await Role.findById(role);
             if (!roleDoc) {
                 return res.status(400).json({ message: "Invalid role ID" });
