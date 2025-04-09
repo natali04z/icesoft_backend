@@ -29,15 +29,15 @@ const DEFAULT_PERMISSIONS = {
   ],
   assistant: [
     "view_roles", "create_users", "view_users", "view_users_id", "update_users",
-    "view_categories", "create_categories", "view_customers",
-    "view_products", "create_products", "edit_products", "delete_products",
+    "view_categories", "view_categories_id","create_categories", "view_customers",
+    "view_products", "view_products_id", "create_products", "edit_products", "delete_products",
     "view_providers", "view_providers_id", "create_providers", "update_providers",
     "view_purchases", "view_purchases_id", "create_purchases", "update_purchases",
     "view_customers", "view_customers_id", "create_customers", "update_customers",
     "view_sales", "view_sales_id", "create_sales", "update_sales"
   ],
   employee: [
-    "view_categories", "view_products", "create_products", "edit_products", "delete_products",
+    "view_categories", "view_products", "view_products_id","create_products", "edit_products", "delete_products",
      "view_customers", "view_sales", "view_customers_id", "create_sales", "update_sales"
   ]
 };
