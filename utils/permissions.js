@@ -18,7 +18,7 @@ export const ALL_PERMISSIONS = [
 const DEFAULT_PERMISSIONS = {
   admin: [
     "view_roles", "view_roles_id", "create_roles", "update_roles", "delete_roles", 
-    "create_users", "view_users", "view_users_id", "update_users", "delete_users",
+    "create_users", "view_users", "view_users_id", "update_users", "delete_users", "update_user_status",
     "view_categories", "view_categories_id", "create_categories", "update_categories", "delete_categories",
     "view_products", "view_products_id", "create_products", "edit_products", "delete_products",
     "view_providers", "view_providers_id", "create_providers", "update_providers", "delete_providers",

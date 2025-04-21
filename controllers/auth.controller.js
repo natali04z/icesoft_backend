@@ -7,7 +7,7 @@ import bcrypt from "bcryptjs";
 
 export const registerUser = async (req, res) => {
     try {
-        const { name, lastname, contact_number, email, password, role } = req.body;
+        const { name, lastname, contact_number, email, password, role, status } = req.body;
 
         // Validate required fields
         if (!name || !lastname || !contact_number || !email || !password || !role) {
@@ -26,6 +26,11 @@ export const registerUser = async (req, res) => {
             return res.status(400).json({ message: "Invalid role name" });
         }
 
+        // Validate status if provided
+        if (status && !['active', 'inactive'].includes(status)) {
+            return res.status(400).json({ message: "Status must be 'active' or 'inactive'" });
+        }
+
         // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -36,7 +41,8 @@ export const registerUser = async (req, res) => {
             contact_number,
             email,
             password: hashedPassword,
-            role: roleDoc._id
+            role: roleDoc._id,
+            status: status || 'active' // Por defecto activo si no se especifica
         });
 
         await newUser.save();
@@ -44,7 +50,7 @@ export const registerUser = async (req, res) => {
 
         // Generate JWT
         const token = jwt.sign(
-            { name: newUser.name, role: newUser.role.name },
+            { id: newUser._id, role: newUser.role._id },
             process.env.JWT_SECRET,
             { expiresIn: "24h" }
         );
@@ -58,7 +64,8 @@ export const registerUser = async (req, res) => {
                 lastname: newUser.lastname,
                 contact_number: newUser.contact_number,
                 email: newUser.email,
-                role: newUser.role.name
+                role: newUser.role.name,
+                status: newUser.status
             }
         });
 
@@ -76,9 +83,16 @@ export const loginUser = async (req, res) => {
             return res.status(400).json({ message: "Email and password are required" });
         }
 
-        const user = await User.findOne({ email }).populate("role"); // ← Esto es CLAVE
+        const user = await User.findOne({ email }).populate("role");
         if (!user) {
             return res.status(401).json({ message: "Invalid credentials" });
+        }
+
+        // Verificar si el usuario está activo
+        if (user.status === 'inactive') {
+            return res.status(403).json({ 
+                message: "Your account is inactive. Please contact an administrator." 
+            });
         }
 
         const isMatch = await bcrypt.compare(password, user.password);
@@ -87,12 +101,22 @@ export const loginUser = async (req, res) => {
         }
 
         const token = jwt.sign(
-            {id: user._id, role: user.role._id  }, // ← ¡Esto es incorrecto!
+            {id: user._id, role: user.role._id},
             process.env.JWT_SECRET,
             { expiresIn: "1d" }
-          );
+        );
 
-        res.json({ token });
+        res.json({ 
+            token,
+            user: {
+                id: user._id,
+                name: user.name,
+                lastname: user.lastname,
+                email: user.email,
+                role: user.role.name,
+                status: user.status
+            }
+        });
 
     } catch (error) {
         res.status(500).json({ message: "Server error", error: error.message });

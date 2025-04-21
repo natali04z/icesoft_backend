@@ -1,6 +1,7 @@
 // middlewares/auth.middleware.js
 import jwt from "jsonwebtoken";
 import Role from "../models/role.js";
+import User from "../models/user.js";
 import mongoose from "mongoose";
 import { checkPermissionSync, getDefaultPermissions } from "../utils/permissions.js";
 
@@ -22,6 +23,17 @@ export const authenticateUser = async (req, res, next) => {
       return res.status(401).json({ message: "Invalid token" });
     }
 
+    // Verificar si el usuario existe y está activo
+    const user = await User.findById(decoded.id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Verificar el estado del usuario
+    if (user.status === 'inactive') {
+      return res.status(403).json({ message: "Your account is inactive. Please contact an administrator." });
+    }
+
     let role;
     
     // Comprobar si decoded.role es un ObjectId o un nombre
@@ -40,7 +52,8 @@ export const authenticateUser = async (req, res, next) => {
     req.user = {
       id: decoded.id,
       roleId: role._id,
-      role: role
+      role: role,
+      status: user.status
     };
     next();
   } catch (error) {
@@ -53,6 +66,11 @@ export const authorizePermission = (permission) => {
     try {
       if (!req.user || !req.user.role) {
         return res.status(401).json({ message: "Authentication required" });
+      }
+      
+      // Verificar nuevamente el estado del usuario (por seguridad adicional)
+      if (req.user.status === 'inactive') {
+        return res.status(403).json({ message: "Your account is inactive" });
       }
       
       const roleName = req.user.role.name;
