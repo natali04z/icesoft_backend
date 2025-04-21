@@ -15,7 +15,7 @@ const RoleSchema = new mongoose.Schema({
     trim: true,
     lowercase: true
   },
-  isDefault: {
+  status: {
     type: Boolean,
     default: false
   },
