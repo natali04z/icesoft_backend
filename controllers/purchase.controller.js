@@ -313,10 +313,10 @@ export const generatePdfReport = async (req, res) => {
             margin: 50,
             size: 'A4',
             info: {
-                Title: 'Purchase Report',
+                Title: 'Informe de Compras',
                 Author: companyName,
-                Subject: 'Purchase Report',
-                Keywords: 'purchases, report, pdf',
+                Subject: 'Informe de Compras',
+                Keywords: 'compras, informe, pdf',
                 Creator: 'IceSoft System',
                 Producer: 'PDFKit'
             }
@@ -324,7 +324,7 @@ export const generatePdfReport = async (req, res) => {
         
         // Set response headers
         res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename=purchases-report-${Date.now()}.pdf`);
+        res.setHeader('Content-Disposition', `attachment; filename=informe-compras-${Date.now()}.pdf`);
         
         // Pipe the PDF document to the response
         doc.pipe(res);
@@ -335,6 +335,21 @@ export const generatePdfReport = async (req, res) => {
         const textColor = '#333333';
         const headerTextColor = '#ffffff';
         const borderColor = '#cccccc';
+        
+        // Función para formatear la moneda en formato colombiano
+        const formatCOP = (amount) => {
+            return new Intl.NumberFormat('es-CO', { 
+                style: 'currency', 
+                currency: 'COP',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
+            }).format(amount);
+        };
+        
+        // Obtener hora actual correcta
+        const now = new Date();
+        const formattedDate = now.toLocaleDateString('es-CO');
+        const formattedTime = now.toLocaleTimeString('es-CO');
         
         // Add header with title
         doc.rect(50, 50, doc.page.width - 100, 80)
@@ -352,7 +367,7 @@ export const generatePdfReport = async (req, res) => {
         doc.font('Helvetica')
            .fontSize(10)
            .fillColor(headerTextColor)
-           .text(`Generado: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`, 
+           .text(`Generado: ${formattedDate} ${formattedTime}`, 
                  70, 120, { align: 'left' });
            
         // Add report info section
@@ -369,7 +384,7 @@ export const generatePdfReport = async (req, res) => {
         
         let infoY = 180;
         
-        doc.text(`Período: ${startDate ? new Date(startDate).toLocaleDateString() : 'Inicio'} a ${endDate ? new Date(endDate).toLocaleDateString() : 'Fin'}`, 70, infoY);
+        doc.text(`Período: ${startDate ? new Date(startDate).toLocaleDateString('es-CO') : 'Inicio'} a ${endDate ? new Date(endDate).toLocaleDateString('es-CO') : 'Fin'}`, 70, infoY);
         infoY += 15;
         
         if (productId) {
@@ -383,11 +398,10 @@ export const generatePdfReport = async (req, res) => {
             infoY += 15;
         }
         
-        // Add summary section
+        // Add simplified summary section
         const totalAmount = purchases.reduce((sum, purchase) => sum + purchase.total, 0);
-        const avgAmount = totalAmount / purchases.length;
         
-        doc.rect(50, 240, doc.page.width - 100, 80)
+        doc.rect(50, 240, doc.page.width - 100, 60)
            .fillAndStroke('#e6f7ff', borderColor);
            
         doc.fillColor(textColor)
@@ -399,13 +413,12 @@ export const generatePdfReport = async (req, res) => {
            .fontSize(10);
            
         doc.text(`Total de Compras: ${purchases.length}`, 70, 270);
-        doc.text(`Monto Total: $${totalAmount.toFixed(2)}`, 70, 285);
-        doc.text(`Promedio por Compra: $${avgAmount.toFixed(2)}`, 70, 300);
+        doc.text(`Total: ${formatCOP(totalAmount)}`, 70, 285);
         
-        // Add table header
-        const tableTop = 350;
-        const tableHeaders = ['ID', 'Fecha', 'Producto', 'Detalles', 'Total'];
-        const colWidths = [60, 80, 150, 150, 60];
+        // Add table header (más compacto para reducir páginas)
+        const tableTop = 320;
+        const tableHeaders = ['ID', 'Fecha', 'Producto', 'Total'];
+        const colWidths = [80, 100, 200, 120];
         
         // Draw table header background
         doc.rect(50, tableTop, doc.page.width - 100, 20)
@@ -417,7 +430,7 @@ export const generatePdfReport = async (req, res) => {
             doc.font('Helvetica-Bold')
                .fontSize(10)
                .fillColor(headerTextColor)
-               .text(header, currentX + 5, tableTop + 6, { width: colWidths[i], align: 'left' });
+               .text(header, currentX + 5, tableTop + 6, { width: colWidths[i], align: i === 3 ? 'right' : 'left' });
             currentX += colWidths[i];
         });
         
@@ -441,7 +454,7 @@ export const generatePdfReport = async (req, res) => {
                     doc.font('Helvetica-Bold')
                        .fontSize(10)
                        .fillColor(headerTextColor)
-                       .text(header, currentX + 5, y + 6, { width: colWidths[i], align: 'left' });
+                       .text(header, currentX + 5, y + 6, { width: colWidths[i], align: i === 3 ? 'right' : 'left' });
                     currentX += colWidths[i];
                 });
                 
@@ -469,25 +482,17 @@ export const generatePdfReport = async (req, res) => {
             currentX += colWidths[0];
             
             // Date
-            const formattedDate = new Date(purchase.purchaseDate).toLocaleDateString();
+            const formattedDate = new Date(purchase.purchaseDate).toLocaleDateString('es-CO');
             doc.text(formattedDate, currentX + 5, y + 6, { width: colWidths[1], align: 'left' });
             currentX += colWidths[1];
             
             // Product
-            const productName = purchase.product ? purchase.product.name : 'Unknown';
+            const productName = purchase.product ? purchase.product.name : 'Desconocido';
             doc.text(productName, currentX + 5, y + 6, { width: colWidths[2], align: 'left' });
             currentX += colWidths[2];
             
-            // Details
-            let details = purchase.details || '';
-            if (details.length > 30) {
-                details = details.substring(0, 27) + '...';
-            }
-            doc.text(details, currentX + 5, y + 6, { width: colWidths[3], align: 'left' });
-            currentX += colWidths[3];
-            
-            // Total
-            doc.text(`$${purchase.total.toFixed(2)}`, currentX + 5, y + 6, { width: colWidths[4], align: 'right' });
+            // Total (formato colombiano)
+            doc.text(formatCOP(purchase.total), currentX + 5, y + 6, { width: colWidths[3], align: 'right' });
             
             y += 20;
         }
@@ -643,26 +648,29 @@ export const generateExcelReport = async (req, res) => {
             }
         };
         
-        // Set column widths
+        // Set column widths (simplificado para menos columnas)
         worksheet.columns = [
             { header: 'ID Compra', key: 'id', width: 15 },
             { header: 'Fecha', key: 'date', width: 15 },
             { header: 'Producto', key: 'product', width: 30 },
-            { header: 'Detalles', key: 'details', width: 40 },
-            { header: 'Total', key: 'total', width: 15 }
+            { header: 'Total', key: 'total', width: 20 }
         ];
         
+        // Obtener la hora actual correcta
+        const now = new Date();
+        const formattedDateTime = now.toLocaleString('es-CO');
+        
         // Add title
-        worksheet.mergeCells('A1:E2');
+        worksheet.mergeCells('A1:D2');
         const titleCell = worksheet.getCell('A1');
         titleCell.value = 'Informe de Compras - IceSoft';
         titleCell.style = titleStyle;
         worksheet.getRow(1).height = 30;
         
         // Add report information
-        worksheet.mergeCells('A3:E3');
+        worksheet.mergeCells('A3:D3');
         const infoCell = worksheet.getCell('A3');
-        infoCell.value = `Período: ${startDate ? new Date(startDate).toLocaleDateString() : 'Inicio'} a ${endDate ? new Date(endDate).toLocaleDateString() : 'Fin'}`;
+        infoCell.value = `Período: ${startDate ? new Date(startDate).toLocaleDateString('es-CO') : 'Inicio'} a ${endDate ? new Date(endDate).toLocaleDateString('es-CO') : 'Fin'}`;
         infoCell.style = {
             font: { size: 10 },
             alignment: { horizontal: 'left', vertical: 'middle' }
@@ -670,7 +678,7 @@ export const generateExcelReport = async (req, res) => {
         
         if (productId) {
             const product = await Product.findById(productId);
-            worksheet.mergeCells('A4:E4');
+            worksheet.mergeCells('A4:D4');
             const productCell = worksheet.getCell('A4');
             productCell.value = `Producto: ${product ? product.name : 'No encontrado'}`;
             productCell.style = {
@@ -678,7 +686,7 @@ export const generateExcelReport = async (req, res) => {
                 alignment: { horizontal: 'left', vertical: 'middle' }
             };
         } else {
-            worksheet.mergeCells('A4:E4');
+            worksheet.mergeCells('A4:D4');
             const productCell = worksheet.getCell('A4');
             productCell.value = 'Producto: Todos';
             productCell.style = {
@@ -688,51 +696,42 @@ export const generateExcelReport = async (req, res) => {
         }
         
         // Add generation date
-        worksheet.mergeCells('A5:E5');
+        worksheet.mergeCells('A5:D5');
         const dateCell = worksheet.getCell('A5');
-        dateCell.value = `Generado: ${new Date().toLocaleString()}`;
+        dateCell.value = `Generado: ${formattedDateTime}`;
         dateCell.style = {
             font: { size: 10, italic: true },
             alignment: { horizontal: 'left', vertical: 'middle' }
         };
         
-        // Add summary section
+        // Add simplified summary section
         const totalAmount = purchases.reduce((sum, purchase) => sum + purchase.total, 0);
-        const avgAmount = totalAmount / purchases.length;
         
-        worksheet.mergeCells('A7:E7');
+        worksheet.mergeCells('A7:D7');
         const summaryTitle = worksheet.getCell('A7');
         summaryTitle.value = 'Resumen';
         summaryTitle.style = subtitleStyle;
         
-        worksheet.mergeCells('A8:D8');
+        worksheet.mergeCells('A8:C8');
         worksheet.getCell('A8').value = 'Total de Compras:';
         worksheet.getCell('A8').style = {
             font: { bold: true },
             alignment: { horizontal: 'right' }
         };
-        worksheet.getCell('E8').value = purchases.length;
+        worksheet.getCell('D8').value = purchases.length;
         
-        worksheet.mergeCells('A9:D9');
-        worksheet.getCell('A9').value = 'Monto Total:';
+        worksheet.mergeCells('A9:C9');
+        worksheet.getCell('A9').value = 'Total:';
         worksheet.getCell('A9').style = {
             font: { bold: true },
             alignment: { horizontal: 'right' }
         };
-        worksheet.getCell('E9').value = totalAmount;
-        worksheet.getCell('E9').numFmt = '"$"#,##0.00';
-        
-        worksheet.mergeCells('A10:D10');
-        worksheet.getCell('A10').value = 'Promedio por Compra:';
-        worksheet.getCell('A10').style = {
-            font: { bold: true },
-            alignment: { horizontal: 'right' }
-        };
-        worksheet.getCell('E10').value = avgAmount;
-        worksheet.getCell('E10').numFmt = '"$"#,##0.00';
+        worksheet.getCell('D9').value = totalAmount;
+        // Formato de moneda colombiana
+        worksheet.getCell('D9').numFmt = '"$"#,##0_-;[Red]-"$"#,##0_-';
         
         // Add space before table
-        const tableStartRow = 13;
+        const tableStartRow = 12;
         
         // Style headers row
         const headerRow = worksheet.getRow(tableStartRow);
@@ -747,17 +746,20 @@ export const generateExcelReport = async (req, res) => {
             const row = worksheet.addRow({
                 id: purchase.id,
                 date: new Date(purchase.purchaseDate),
-                product: purchase.product ? purchase.product.name : 'Unknown',
-                details: purchase.details || '',
+                product: purchase.product ? purchase.product.name : 'Desconocido',
                 total: purchase.total
             });
             
             // Apply alternating row styles
             const rowStyle = index % 2 === 0 ? rowEvenStyle : rowOddStyle;
             row.eachCell((cell) => {
-                cell.style = { ...cell.style,
+                cell.style = { 
+                    ...cell.style,
                     ...rowStyle,
                     border: {
+                        top: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+                        left: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+                        bottom: { style: 'thin', color: { argb: 'FFCCCCCC' } },
                         top: { style: 'thin', color: { argb: 'FFCCCCCC' } },
                         left: { style: 'thin', color: { argb: 'FFCCCCCC' } },
                         bottom: { style: 'thin', color: { argb: 'FFCCCCCC' } },
@@ -772,16 +774,16 @@ export const generateExcelReport = async (req, res) => {
         // Format date column
         worksheet.getColumn('date').numFmt = 'dd/mm/yyyy';
         
-        // Format total column as currency
-        worksheet.getColumn('total').numFmt = '"$"#,##0.00';
+        // Format total column as Colombian currency
+        worksheet.getColumn('total').numFmt = '"$"#,##0_-;[Red]-"$"#,##0_-';
         worksheet.getColumn('total').alignment = { horizontal: 'right' };
         
         // Add totals row
-        const totalsRow = worksheet.addRow(['Total', '', '', '', totalAmount]);
+        const totalsRow = worksheet.addRow(['Total', '', '', totalAmount]);
         totalsRow.eachCell((cell) => {
             cell.style = totalStyle;
         });
-        worksheet.getCell(`E${rowNumber}`).numFmt = '"$"#,##0.00';
+        worksheet.getCell(`D${rowNumber}`).numFmt = '"$"#,##0_-;[Red]-"$"#,##0_-';
         
         // Create table with proper structure
         const tableName = 'PurchasesTable';
@@ -798,21 +800,19 @@ export const generateExcelReport = async (req, res) => {
                 { name: 'ID Compra' },
                 { name: 'Fecha' },
                 { name: 'Producto' },
-                { name: 'Detalles' },
                 { name: 'Total' }
             ],
             rows: purchases.map(purchase => [
                 purchase.id,
                 new Date(purchase.purchaseDate),
-                purchase.product ? purchase.product.name : 'Unknown',
-                purchase.details || '',
+                purchase.product ? purchase.product.name : 'Desconocido',
                 purchase.total
             ])
         });
         
         // Add footer
         const footerRow = rowNumber + 2;
-        worksheet.mergeCells(`A${footerRow}:E${footerRow}`);
+        worksheet.mergeCells(`A${footerRow}:D${footerRow}`);
         const footerCell = worksheet.getCell(`A${footerRow}`);
         footerCell.value = 'IceSoft - Sistema de Gestión de Compras';
         footerCell.style = {
