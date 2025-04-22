@@ -2,6 +2,16 @@ import Customer from "../models/customer.js";
 import mongoose from "mongoose";
 import { checkPermission } from "../utils/permissions.js";
 
+// Función para formatear la fecha
+const formatDate = (date) => {
+  if (!date) return null;
+  return new Date(date).toLocaleDateString('es-ES', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+};
+
 // Obtener todos los clientes
 export const getCustomers = async (req, res) => {
     try {
@@ -10,9 +20,20 @@ export const getCustomers = async (req, res) => {
         }
 
         const customers = await Customer.find()
-            .select("name email phone createdAt"); // Se incluye createdAt
+            .select("name lastname email phone status createdAt");
 
-        res.status(200).json(customers);
+        // Formatear fechas en la respuesta
+        const formattedCustomers = customers.map(customer => ({
+            id: customer._id,
+            name: customer.name,
+            lastname: customer.lastname,
+            email: customer.email,
+            phone: customer.phone,
+            status: customer.status,
+            createdAt: formatDate(customer.createdAt)
+        }));
+
+        res.status(200).json(formattedCustomers);
     } catch (error) {
         console.error("Error fetching customers:", error);
         res.status(500).json({ message: "Server error" });
@@ -33,13 +54,23 @@ export const getCustomerById = async (req, res) => {
         }
 
         const customer = await Customer.findById(id)
-            .select("id name email phone createdAt"); // Se incluye createdAt
+            .select("id name lastname email phone status createdAt");
 
         if (!customer) {
             return res.status(404).json({ message: "Customer not found" });
         }
 
-        res.status(200).json(customer);
+        const formattedCustomer = {
+            id: customer._id,
+            name: customer.name,
+            lastname: customer.lastname,
+            email: customer.email,
+            phone: customer.phone,
+            status: customer.status,
+            createdAt: formatDate(customer.createdAt)
+        };
+
+        res.status(200).json(formattedCustomer);
     } catch (error) {
         console.error("Error fetching customer:", error);
         res.status(500).json({ message: "Server error" });
@@ -53,10 +84,11 @@ export const createCustomer = async (req, res) => {
             return res.status(403).json({ message: "Unauthorized access" });
         }
 
-        const { name, email, phone } = req.body;
+        const { name, lastname, email, phone, status } = req.body;
 
-        if (!name || !email || !phone) {
-            return res.status(400).json({ message: "All fields are required" });
+        // Validar campos obligatorios
+        if (!name || !lastname || !email || !phone) {
+            return res.status(400).json({ message: "Name, lastname, email, and phone are required" });
         }
 
         // Validar formato de email
@@ -71,11 +103,18 @@ export const createCustomer = async (req, res) => {
             return res.status(400).json({ message: "Customer with this email already exists" });
         }
 
+        // Validar estado si se proporciona
+        if (status && !['active', 'inactive'].includes(status)) {
+            return res.status(400).json({ message: "Status must be either 'active' or 'inactive'" });
+        }
+
         const newCustomer = new Customer({
             name,
+            lastname,
             email,
             phone,
-            createdAt: new Date(), // Se asigna explícitamente al crear
+            status: status || 'active',
+            createdAt: new Date(),
         });
 
         await newCustomer.save();
@@ -84,9 +123,11 @@ export const createCustomer = async (req, res) => {
             customer: {
                 id: newCustomer._id,
                 name: newCustomer.name,
+                lastname: newCustomer.lastname,
                 email: newCustomer.email,
                 phone: newCustomer.phone,
-                createdAt: newCustomer.createdAt, // Se devuelve en la respuesta
+                status: newCustomer.status,
+                createdAt: formatDate(newCustomer.createdAt),
             }
         });
     } catch (error) {
@@ -103,7 +144,7 @@ export const updateCustomer = async (req, res) => {
         }
 
         const { id } = req.params;
-        const { name, email, phone } = req.body;
+        const { name, lastname, email, phone, status } = req.body;
 
         if (!mongoose.Types.ObjectId.isValid(id)) {
             return res.status(400).json({ message: "Invalid customer ID" });
@@ -123,9 +164,14 @@ export const updateCustomer = async (req, res) => {
             }
         }
 
+        // Validar estado si se proporciona
+        if (status && !['active', 'inactive'].includes(status)) {
+            return res.status(400).json({ message: "Status must be either 'active' or 'inactive'" });
+        }
+
         const updatedCustomer = await Customer.findByIdAndUpdate(
             id,
-            { name, email, phone },
+            { name, lastname, email, phone, status },
             { new: true, runValidators: true }
         );
 
@@ -138,9 +184,11 @@ export const updateCustomer = async (req, res) => {
             customer: {
                 id: updatedCustomer._id,
                 name: updatedCustomer.name,
+                lastname: updatedCustomer.lastname,
                 email: updatedCustomer.email,
                 phone: updatedCustomer.phone,
-                createdAt: updatedCustomer.createdAt, // Se devuelve en la respuesta
+                status: updatedCustomer.status,
+                createdAt: formatDate(updatedCustomer.createdAt),
             }
         });
     } catch (error) {
@@ -171,6 +219,52 @@ export const deleteCustomer = async (req, res) => {
         res.status(200).json({ message: "Customer deleted successfully" });
     } catch (error) {
         console.error("Error deleting customer:", error);
+        res.status(500).json({ message: "Server error" });
+    }
+};
+
+// Cambiar el estado de un cliente
+export const updateCustomerStatus = async (req, res) => {
+    try {
+        if (!checkPermission(req.user.role, "update_customers_status")) {
+            return res.status(403).json({ message: "Unauthorized access" });
+        }
+
+        const { id } = req.params;
+        const { status } = req.body;
+
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ message: "Invalid customer ID" });
+        }
+
+        if (!status || !['active', 'inactive'].includes(status)) {
+            return res.status(400).json({ message: "Status must be either 'active' or 'inactive'" });
+        }
+
+        const updatedCustomer = await Customer.findByIdAndUpdate(
+            id,
+            { status },
+            { new: true, runValidators: true }
+        );
+
+        if (!updatedCustomer) {
+            return res.status(404).json({ message: "Customer not found" });
+        }
+
+        res.status(200).json({ 
+            message: "Customer status updated successfully", 
+            customer: {
+                id: updatedCustomer._id,
+                name: updatedCustomer.name,
+                lastname: updatedCustomer.lastname,
+                email: updatedCustomer.email,
+                phone: updatedCustomer.phone,
+                status: updatedCustomer.status,
+                createdAt: formatDate(updatedCustomer.createdAt),
+            }
+        });
+    } catch (error) {
+        console.error("Error updating customer status:", error);
         res.status(500).json({ message: "Server error" });
     }
 };
