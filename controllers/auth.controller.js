@@ -21,7 +21,7 @@ export const registerUser = async (req, res) => {
         }
 
         // Find role by name
-        const roleDoc = await Role.findOne({ name: role });
+        const roleDoc = await Role.findOne({ id: role });
         if (!roleDoc) {
             return res.status(400).json({ message: "Invalid role name" });
         }
