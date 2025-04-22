@@ -41,7 +41,7 @@ export const registerUser = async (req, res) => {
             contact_number,
             email,
             password: hashedPassword,
-            role: roleDoc._id,
+            role: _id,
             status: status || 'active' // Por defecto activo si no se especifica
         });
 
