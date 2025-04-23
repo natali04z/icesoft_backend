@@ -70,7 +70,7 @@ export const getPurchases = async (req, res) => {
             .populate("product", "name");
 
         // Format the date in the response
-        const Purchases = purchases.map(purchase => {
+        const formattedPurchases = purchases.map(purchase => {
             const purchaseObj = purchase.toObject();
             if (purchaseObj.purchaseDate) {
                 purchaseObj.purchaseDate = new Date(purchaseObj.purchaseDate).toISOString().split('T')[0];
@@ -78,7 +78,7 @@ export const getPurchases = async (req, res) => {
             return purchaseObj;
         });
 
-        res.status(200).json(Purchases);
+        res.status(200).json(formattedPurchases);
     } catch (error) {
         console.error("Error fetching purchases:", error);
         res.status(500).json({ message: "Server error" });
@@ -126,48 +126,81 @@ export const postPurchase = async (req, res) => {
             return res.status(403).json({ message: "Unauthorized access" });
         }
 
-        const { product, total, details, purchaseDate } = req.body;
-        
-        // Validate input data
-        const validationErrors = validatePurchaseData(req.body);
-        if (validationErrors.length > 0) {
-            return res.status(400).json({ message: "Validation failed", errors: validationErrors });
+        const { products, details, purchaseDate } = req.body;
+
+        // Validate if products array exists and is not empty
+        if (!Array.isArray(products) || products.length === 0) {
+            return res.status(400).json({ message: "At least one product is required" });
         }
 
-        // Check if product exists
-        const existingProduct = await Product.findById(product);
-        if (!existingProduct) {
-            return res.status(404).json({ message: "Product not found" });
+        // Initialize total
+        let total = 0;
+        let validatedProducts = [];
+
+        // Validate and process each product
+        for (let i = 0; i < products.length; i++) {
+            const item = products[i];
+            
+            // Check product ID
+            if (!item.product || !mongoose.Types.ObjectId.isValid(item.product)) {
+                return res.status(400).json({ message: `Invalid product ID at index ${i}` });
+            }
+
+            // Find product in database
+            const foundProduct = await Product.findById(item.product);
+            if (!foundProduct) {
+                return res.status(404).json({ message: `Product not found at index ${i}` });
+            }
+
+            // Validate quantity
+            if (!item.quantity || typeof item.quantity !== 'number' || item.quantity <= 0) {
+                return res.status(400).json({ message: `Invalid quantity at index ${i}` });
+            }
+
+            // Calculate item total
+            const itemPrice = foundProduct.price;
+            const itemTotal = itemPrice * item.quantity;
+            
+            // Add to validated products
+            validatedProducts.push({
+                product: item.product,
+                quantity: item.quantity,
+                price: itemPrice,
+                total: itemTotal
+            });
+            
+            // Add to overall total
+            total += itemTotal;
         }
 
+        // Generate purchase ID
         const id = await generatePurchaseId();
+
+        // Create new purchase
         const newPurchase = new Purchase({
             id,
-            product,
+            products: validatedProducts,
+            details: details || "Purchase details not provided",
             purchaseDate: purchaseDate || new Date(),
-            total,
-            details
+            total
         });
 
+        // Save to database
         await newPurchase.save();
-        
-        // Format the date in the response
+
+        // Format the response
         const formattedPurchase = newPurchase.toObject();
         if (formattedPurchase.purchaseDate) {
             formattedPurchase.purchaseDate = new Date(formattedPurchase.purchaseDate).toISOString().split('T')[0];
         }
-        
-        res.status(201).json({ message: "Purchase created successfully", purchase: formattedPurchase });
+
+        res.status(201).json({ 
+            message: "Purchase created successfully", 
+            purchase: formattedPurchase 
+        });
     } catch (error) {
         console.error("Error creating purchase:", error);
-        
-        // Handle Mongoose validation errors
-        if (error.name === 'ValidationError') {
-            const errors = Object.values(error.errors).map(err => err.message);
-            return res.status(400).json({ message: "Validation failed", errors });
-        }
-        
-        res.status(500).json({ message: "Server error" });
+        res.status(500).json({ message: "Server error", details: error.message });
     }
 };
 
@@ -269,7 +302,7 @@ export const deletePurchase = async (req, res) => {
     }
 };
 
-// ===== NUEVAS FUNCIONES DE GENERACIÓN DE INFORMES =====
+// ===== EXPORT FUNCTIONS =====
 
 // GET: Generate a PDF report of purchases
 export const generatePdfReport = async (req, res) => {
@@ -757,9 +790,6 @@ export const generateExcelReport = async (req, res) => {
                     ...cell.style,
                     ...rowStyle,
                     border: {
-                        top: { style: 'thin', color: { argb: 'FFCCCCCC' } },
-                        left: { style: 'thin', color: { argb: 'FFCCCCCC' } },
-                        bottom: { style: 'thin', color: { argb: 'FFCCCCCC' } },
                         top: { style: 'thin', color: { argb: 'FFCCCCCC' } },
                         left: { style: 'thin', color: { argb: 'FFCCCCCC' } },
                         bottom: { style: 'thin', color: { argb: 'FFCCCCCC' } },

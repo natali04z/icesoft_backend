@@ -20,13 +20,27 @@ export const registerUser = async (req, res) => {
             return res.status(400).json({ message: "Email already in use" });
         }
 
-        // Find role by name
-        const roleDoc = await Role.findOne({ id: role });
+        let roleDoc = null;
+        
+        if (!roleDoc) {
+            try {
+                roleDoc = await Role.findById(role);
+            } catch (err) {
+            }
+        }
+        
+        if (!roleDoc) {
+            roleDoc = await Role.findOne({ name: role });
+        }
+        
+        if (!roleDoc) {
+            roleDoc = await Role.findOne({ id: role });
+        }
+
         if (!roleDoc) {
             return res.status(400).json({ message: "Invalid role name" });
         }
 
-        // Validate status if provided
         if (status && !['active', 'inactive'].includes(status)) {
             return res.status(400).json({ message: "Status must be 'active' or 'inactive'" });
         }
@@ -41,8 +55,8 @@ export const registerUser = async (req, res) => {
             contact_number,
             email,
             password: hashedPassword,
-            role: _id,
-            status: status || 'active' // Por defecto activo si no se especifica
+            role: roleDoc._id,
+            status: status || 'active'
         });
 
         await newUser.save();

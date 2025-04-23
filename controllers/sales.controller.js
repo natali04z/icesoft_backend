@@ -74,12 +74,46 @@ export const getSales = async (req, res) => {
             return res.status(403).json({ message: "Unauthorized access" });
         }
 
-        const sales = await Sale.find()
+        // Añadir filtros opcionales desde query params
+        let filter = {};
+        
+        // Filtro por fecha si se especifica
+        if (req.query.startDate && req.query.endDate) {
+            filter.date = {
+                $gte: new Date(req.query.startDate),
+                $lte: new Date(req.query.endDate)
+            };
+        }
+        
+        // Filtro por cliente si se especifica
+        if (req.query.customerId && mongoose.Types.ObjectId.isValid(req.query.customerId)) {
+            filter.customer = req.query.customerId;
+        }
+        
+        // Filtro por producto si se especifica
+        if (req.query.productId && mongoose.Types.ObjectId.isValid(req.query.productId)) {
+            filter.product = req.query.productId;
+        }
+
+        // Implementar paginación opcional
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 50; // Valor predeterminado más alto
+        const skip = (page - 1) * limit;
+
+        // Contar total para paginación
+        const total = await Sale.countDocuments(filter);
+        
+        // Obtener ventas con filtros y paginación
+        const sales = await Sale.find(filter)
+            .skip(skip)
+            .limit(limit)
+            .sort({ createdAt: -1 }) // Ordenar por fecha de creación, más recientes primero
             .populate("customer", "name lastname")
             .populate("product", "name price");
 
         // Formatear respuesta con manejo seguro de null/undefined
         const formattedSales = sales.map(sale => ({
+            _id: sale._id, // Incluir MongoDB ID para facilitar operaciones
             id: sale.id || '',
             invoiceID: sale.invoiceID || null,
             customer: sale.customer ? `${sale.customer.name || ''} ${sale.customer.lastname || ''}` : 'Unknown Customer',
@@ -92,7 +126,16 @@ export const getSales = async (req, res) => {
             total: sale.total || 0
         }));
 
-        res.status(200).json(formattedSales);
+        // Incluir información de paginación en la respuesta
+        res.status(200).json({
+            sales: formattedSales,
+            pagination: {
+                total,
+                page,
+                limit,
+                pages: Math.ceil(total / limit)
+            }
+        });
     } catch (error) {
         console.error("Error fetching sales:", error);
         res.status(500).json({ message: "Server error" });
@@ -122,6 +165,7 @@ export const getSaleById = async (req, res) => {
 
         // Formatear respuesta con manejo seguro de null/undefined
         const formattedSale = {
+            _id: sale._id,
             id: sale.id || '',
             invoiceID: sale.invoiceID || null,
             customer: sale.customer ? {
@@ -139,7 +183,9 @@ export const getSaleById = async (req, res) => {
             date: formatDate(sale.date),
             price: sale.price || 0,
             quantity: sale.quantity || 0,
-            total: sale.total || 0
+            total: sale.total || 0,
+            createdAt: sale.createdAt,
+            updatedAt: sale.updatedAt
         };
 
         res.status(200).json(formattedSale);
@@ -184,7 +230,11 @@ export const createSale = async (req, res) => {
         }
 
         if (productData.stock < quantity) {
-            return res.status(400).json({ message: "Not enough stock available" });
+            return res.status(400).json({ 
+                message: "Not enough stock available", 
+                available: productData.stock,
+                requested: quantity
+            });
         }
 
         // Generar ID para la venta
@@ -222,6 +272,7 @@ export const createSale = async (req, res) => {
 
         // Formatear con manejo seguro de null/undefined
         const formattedSale = {
+            _id: savedSale._id,
             id: savedSale.id || '',
             invoiceID: savedSale.invoiceID || null,
             customer: savedSale.customer 
@@ -292,7 +343,11 @@ export const updateSale = async (req, res) => {
             // Reducir stock del nuevo producto
             const quantityToUse = quantity !== undefined ? quantity : sale.quantity;
             if (newProduct.stock < quantityToUse) {
-                return res.status(400).json({ message: "Not enough stock in new product" });
+                return res.status(400).json({ 
+                    message: "Not enough stock in new product",
+                    available: newProduct.stock,
+                    requested: quantityToUse
+                });
             }
 
             newProduct.stock -= quantityToUse;
@@ -309,7 +364,11 @@ export const updateSale = async (req, res) => {
             }
 
             if (stockAdjustment < 0 && currentProduct.stock < Math.abs(stockAdjustment)) {
-                return res.status(400).json({ message: "Not enough stock available" });
+                return res.status(400).json({ 
+                    message: "Not enough stock available",
+                    available: currentProduct.stock,
+                    requested: Math.abs(stockAdjustment)
+                });
             }
 
             currentProduct.stock += stockAdjustment;
@@ -319,6 +378,13 @@ export const updateSale = async (req, res) => {
         // Verificar cliente si se proporciona
         if (customer && !mongoose.Types.ObjectId.isValid(customer)) {
             return res.status(400).json({ message: "Invalid customer ID" });
+        }
+
+        if (customer) {
+            const customerExists = await Customer.findById(customer);
+            if (!customerExists) {
+                return res.status(404).json({ message: "Customer not found" });
+            }
         }
 
         // Calcular nuevo total
@@ -345,6 +411,7 @@ export const updateSale = async (req, res) => {
 
         // Formatear respuesta con manejo seguro de null/undefined
         const formattedSale = {
+            _id: updatedSale._id,
             id: updatedSale.id || '',
             invoiceID: updatedSale.invoiceID || null,
             customer: updatedSale.customer 
@@ -414,27 +481,37 @@ export const exportSalesToPDF = async (req, res) => {
             return res.status(403).json({ message: "Unauthorized access" });
         }
 
-        const { startDate, endDate } = req.query;
+        const { startDate, endDate, customerId, productId } = req.query;
 
-        // Construir filtro de fechas si se proporcionan
-        let dateFilter = {};
+        // Construir filtro
+        let filter = {};
+        
+        // Filtro por fechas
         if (startDate && endDate) {
-            dateFilter = {
-                date: {
-                    $gte: new Date(startDate),
-                    $lte: new Date(endDate)
-                }
+            filter.date = {
+                $gte: new Date(startDate),
+                $lte: new Date(endDate)
             };
+        }
+        
+        // Filtro por cliente
+        if (customerId && mongoose.Types.ObjectId.isValid(customerId)) {
+            filter.customer = customerId;
+        }
+        
+        // Filtro por producto
+        if (productId && mongoose.Types.ObjectId.isValid(productId)) {
+            filter.product = productId;
         }
 
         // Obtener ventas con filtro
-        const sales = await Sale.find(dateFilter)
+        const sales = await Sale.find(filter)
             .populate("customer", "name lastname")
             .populate("product", "name price")
             .sort({ date: -1 });
 
         if (sales.length === 0) {
-            return res.status(404).json({ message: "No sales found for the specified period" });
+            return res.status(404).json({ message: "No sales found for the specified criteria" });
         }
 
         // Crear documento PDF
@@ -456,12 +533,27 @@ export const exportSalesToPDF = async (req, res) => {
         // Filtros aplicados
         if (startDate && endDate) {
             doc.fontSize(12).text(`Period: ${new Date(startDate).toLocaleDateString()} - ${new Date(endDate).toLocaleDateString()}`, { align: 'center' });
-            doc.moveDown();
         }
+        
+        if (customerId) {
+            const customer = await Customer.findById(customerId);
+            if (customer) {
+                doc.fontSize(12).text(`Customer: ${customer.name} ${customer.lastname}`, { align: 'center' });
+            }
+        }
+        
+        if (productId) {
+            const product = await Product.findById(productId);
+            if (product) {
+                doc.fontSize(12).text(`Product: ${product.name}`, { align: 'center' });
+            }
+        }
+        
+        doc.moveDown();
 
         // Tabla de ventas
         doc.moveDown();
-        const tableTop = 150;
+        const tableTop = 170; // Ajustado para acomodar filtros adicionales
         const tableHeaders = ['ID', 'Invoice', 'Date', 'Customer', 'Product', 'Quantity', 'Price', 'Total'];
         const tableColumnWidths = [30, 40, 60, 100, 100, 50, 60, 60];
         
@@ -534,6 +626,7 @@ export const exportSalesToPDF = async (req, res) => {
         // Total de ventas
         doc.moveDown(2);
         doc.fontSize(12).text(`Total Sales: $${totalSales.toFixed(2)}`, { align: 'right' });
+        doc.fontSize(10).text(`Number of Sales: ${sales.length}`, { align: 'right' });
 
         // Finalizar PDF
         doc.end();
@@ -550,32 +643,100 @@ export const exportSalesToExcel = async (req, res) => {
             return res.status(403).json({ message: "Unauthorized access" });
         }
 
-        const { startDate, endDate } = req.query;
+        const { startDate, endDate, customerId, productId } = req.query;
 
-        // Construir filtro de fechas si se proporcionan
-        let dateFilter = {};
+        // Construir filtro
+        let filter = {};
+        
+        // Filtro por fechas
         if (startDate && endDate) {
-            dateFilter = {
-                date: {
-                    $gte: new Date(startDate),
-                    $lte: new Date(endDate)
-                }
+            filter.date = {
+                $gte: new Date(startDate),
+                $lte: new Date(endDate)
             };
+        }
+        
+        // Filtro por cliente
+        if (customerId && mongoose.Types.ObjectId.isValid(customerId)) {
+            filter.customer = customerId;
+        }
+        
+        // Filtro por producto
+        if (productId && mongoose.Types.ObjectId.isValid(productId)) {
+            filter.product = productId;
         }
 
         // Obtener ventas con filtro
-        const sales = await Sale.find(dateFilter)
+        const sales = await Sale.find(filter)
             .populate("customer", "name lastname")
             .populate("product", "name price")
             .sort({ date: -1 });
 
         if (sales.length === 0) {
-            return res.status(404).json({ message: "No sales found for the specified period" });
+            return res.status(404).json({ message: "No sales found for the specified criteria" });
         }
 
         // Crear libro Excel
         const workbook = new Excel.Workbook();
+        
+        // Añadir información de cabecera
+        workbook.creator = 'IceSoft';
+        workbook.created = new Date();
+        workbook.modified = new Date();
+        
+        // Crear hoja de trabajo
         const worksheet = workbook.addWorksheet('Sales Report');
+
+        // Añadir título y filtros aplicados
+        worksheet.mergeCells('A1:H1');
+        const titleCell = worksheet.getCell('A1');
+        titleCell.value = 'Sales Report';
+        titleCell.font = { size: 16, bold: true };
+        titleCell.alignment = { horizontal: 'center' };
+        
+        // Añadir filtros como subtítulos
+        let currentRow = 2;
+        
+        worksheet.mergeCells(`A${currentRow}:H${currentRow}`);
+        worksheet.getCell(`A${currentRow}`).value = `Generated: ${new Date().toLocaleDateString()}`;
+        worksheet.getCell(`A${currentRow}`).alignment = { horizontal: 'center' };
+        currentRow++;
+        
+        if (startDate && endDate) {
+            worksheet.mergeCells(`A${currentRow}:H${currentRow}`);
+            worksheet.getCell(`A${currentRow}`).value = `Period: ${new Date(startDate).toLocaleDateString()} - ${new Date(endDate).toLocaleDateString()}`;
+            worksheet.getCell(`A${currentRow}`).alignment = { horizontal: 'center' };
+            currentRow++;
+        }
+        
+        if (customerId) {
+            const customer = await Customer.findById(customerId);
+            if (customer) {
+                worksheet.mergeCells(`A${currentRow}:H${currentRow}`);
+                worksheet.getCell(`A${currentRow}`).value = `Customer: ${customer.name} ${customer.lastname}`;
+                worksheet.getCell(`A${currentRow}`).alignment = { horizontal: 'center' };
+                currentRow++;
+            }
+        }
+        
+        if (productId) {
+            const product = await Product.findById(productId);
+            if (product) {
+                worksheet.mergeCells(`A${currentRow}:H${currentRow}`);
+                worksheet.getCell(`A${currentRow}`).value = `Product: ${product.name}`;
+                worksheet.getCell(`A${currentRow}`).alignment = { horizontal: 'center' };
+                currentRow++;
+            }
+        }
+        
+        // Espacio antes de la tabla
+        currentRow++;
+        
+        // Configurar encabezados de tabla (comenzando en fila 6)
+        const headerRow = currentRow;
+        worksheet.getRow(headerRow).values = [
+            'Sale ID', 'Invoice ID', 'Date', 'Customer', 'Product', 'Quantity', 'Price', 'Total'
+        ];
 
         // Estilo para encabezados
         const headerStyle = {
@@ -586,29 +747,32 @@ export const exportSalesToExcel = async (req, res) => {
                 left: { style: 'thin' },
                 bottom: { style: 'thin' },
                 right: { style: 'thin' }
-            }
+            },
+            alignment: { horizontal: 'center' }
         };
 
-        // Añadir encabezados
-        worksheet.columns = [
-            { header: 'Sale ID', key: 'id', width: 10 },
-            { header: 'Invoice ID', key: 'invoiceID', width: 12 },
-            { header: 'Date', key: 'date', width: 15 },
-            { header: 'Customer', key: 'customer', width: 25 },
-            { header: 'Product', key: 'product', width: 25 },
-            { header: 'Quantity', key: 'quantity', width: 10 },
-            { header: 'Price', key: 'price', width: 12 },
-            { header: 'Total', key: 'total', width: 12 }
-        ];
-
-        // Estilo de encabezados
-        worksheet.getRow(1).eachCell((cell) => {
+        // Aplicar estilo a encabezados
+        worksheet.getRow(headerRow).eachCell((cell) => {
             cell.fill = headerStyle.fill;
             cell.font = headerStyle.font;
             cell.border = headerStyle.border;
+            cell.alignment = headerStyle.alignment;
         });
 
+        // Configurar ancho de columnas
+        worksheet.columns = [
+            { key: 'id', width: 10 },
+            { key: 'invoiceID', width: 12 },
+            { key: 'date', width: 15 },
+            { key: 'customer', width: 25 },
+            { key: 'product', width: 25 },
+            { key: 'quantity', width: 10 },
+            { key: 'price', width: 12 },
+            { key: 'total', width: 12 }
+        ];
+
         // Añadir datos con manejo seguro de null/undefined
+        currentRow++;
         sales.forEach(sale => {
             worksheet.addRow({
                 id: sale.id || '',
@@ -620,6 +784,7 @@ export const exportSalesToExcel = async (req, res) => {
                 price: sale.price || 0,
                 total: sale.total || 0
             });
+            currentRow++;
         });
 
         // Formato para columnas numéricas
@@ -627,7 +792,8 @@ export const exportSalesToExcel = async (req, res) => {
         worksheet.getColumn('total').numFmt = '$#,##0.00';
 
         // Añadir fila de total
-        const totalRow = worksheet.rowCount + 2;
+        currentRow++;
+        const totalRow = currentRow;
         worksheet.mergeCells(`A${totalRow}:G${totalRow}`);
         worksheet.getCell(`A${totalRow}`).value = 'Total Sales:';
         worksheet.getCell(`A${totalRow}`).alignment = { horizontal: 'right' };
@@ -636,6 +802,15 @@ export const exportSalesToExcel = async (req, res) => {
         worksheet.getCell(`H${totalRow}`).value = sales.reduce((sum, sale) => sum + (sale.total || 0), 0);
         worksheet.getCell(`H${totalRow}`).numFmt = '$#,##0.00';
         worksheet.getCell(`H${totalRow}`).font = { bold: true };
+        
+        // Añadir recuento de ventas
+        currentRow++;
+        worksheet.mergeCells(`A${currentRow}:G${currentRow}`);
+        worksheet.getCell(`A${currentRow}`).value = 'Number of Sales:';
+        worksheet.getCell(`A${currentRow}`).alignment = { horizontal: 'right' };
+        
+        worksheet.getCell(`H${currentRow}`).value = sales.length;
+        worksheet.getCell(`H${currentRow}`).font = { bold: true };
 
         // Configurar encabezados para descarga del archivo
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -740,6 +915,7 @@ export const generateInvoice = async (req, res) => {
         
         doc.text(sale.product ? sale.product.name || 'Unknown Product' : 'Unknown Product', position + 50, rowY, { width: tableColumnWidths[0], align: 'left' });
         position += tableColumnWidths[0];
+        
         doc.text(sale.quantity ? sale.quantity.toString() : '0', position + 50, rowY, { width: tableColumnWidths[1], align: 'left' });
         position += tableColumnWidths[1];
         
